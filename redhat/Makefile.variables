@@ -119,6 +119,13 @@ PATCHLIST_URL ?= none
 #  kernel release. (This includes prepatch or "rc" releases.)
 # Set RELEASED_KERNEL to 0 when the upstream source tarball contains an
 #  unreleased kernel development snapshot.
+#
+# Pinned here on purpose. arkify forces this to 1, but only by sed when it
+# *creates* an arkify-local-infra-* branch. A branch seeded from an earlier
+# target's infra branch (see docs/arkify-sop.md) never sees that sed, so the
+# value silently falls back to whatever the new ark-infra base ships:
+# stable-X.Y ark-infra ships 1, mainline ark-infra ships 0. We always build
+# from a released tag, so pin it explicitly and stop depending on the base.
 RELEASED_KERNEL:=1
 
 # Local version to be used for official (non-scratch) builds. Makefile
@@ -217,3 +224,21 @@ UPSTREAMBUILD_GIT_ONLY ?=
 ZSTREAM ?= no
 
 DISTLOCALVERSION ?= .surface
+
+# arkify force-seds the `UPSTREAM_BRANCH ?=` line above to a local-only
+# arkify-local-upstream-* branch on every import. That branch does not exist in
+# a single-branch clone (e.g. what COPR checks out), so redhat/Makefile:207
+# resolves UPSTREAM to empty and redhat/Makefile:227 hard-errors with
+# "Missing an ... branch".
+#
+# This line is not matched by arkify's sed (which is anchored at
+# ^UPSTREAM_BRANCH), so it survives re-imports. $(MARKER) is already computed as
+# v<VERSION>.<PATCHLEVEL>.<SUBLEVEL> from this tree's own Makefile at
+# redhat/Makefile:193, before UPSTREAM is resolved at redhat/Makefile:207 - so
+# this points at the upstream release tag and keeps tracking it across future
+# rebases without needing an edit.
+#
+# NOTE: released kernels only. For -rc/stable-rc or mainline snapshots set
+# UPSTREAM_BRANCH to a real ref instead: MARKER is not yet defined where
+# redhat/Makefile:175 reads UPSTREAM_BRANCH for STABLERC_MARKER.
+override UPSTREAM_BRANCH = $(MARKER)
