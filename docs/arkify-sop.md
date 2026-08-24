@@ -317,20 +317,55 @@ then delete it.
 
 ## 7. linux-surface specifics
 
+> **The surface and sc7280 builds are independent.** They share this recipe and
+> nothing else. The only git history they have in common is the upstream release
+> tag they are both based on (`v7.2`) and the upstream ark-infra tag arkify picks
+> (`arkify-infra-mainline-2026-08-18`). Do **not** seed one's infra branch from
+> the other: it drags the wrong device's configs along and, worse, skips arkify's
+> create-time sed (see the seeding trap in §3). Let arkify create each infra
+> branch itself and apply the customisations independently.
+>
+> sc7280 builds **aarch64 only** (Fairphone 5); surface builds **x86_64 only**.
+> That is enforced by COPR chroot selection, not by the spec — ark's stock arch
+> handling is left alone.
+
 The surface *patch set* lives in a separate repo,
-[linux-surface/linux-surface](https://github.com/linux-surface/linux-surface)
-(`patches/7.1/`, `pkg/fedora/`) — the local `arkify-copr` / `wip-arkify`
-branches are that repo, not a kernel tree. The applied kernel tree is
-`surface-7.1`.
+[linux-surface/linux-surface](https://github.com/linux-surface/linux-surface):
+`patches/<ver>/NNNN-*.patch` plus `configs/surface-<ver>.config`. The local
+`arkify-copr` / `wip-arkify` branches are that repo, not a kernel tree.
 
-To arkify it, follow §2–§6 with:
+Building the target branch:
 
-- target branch `linux-<ver>-surface-arkify`, rebased from `surface-7.1`
-- `DISTLOCALVERSION ?= .surface`, and a `RHEL_RELEASE` distinct from sc7280's so
-  the two COPR repos never collide on an NVR
-- same `stable-X.Y` infra kind as sc7280 while both track the same stable series
-- `pkg/fedora/`'s config overrides translated into `redhat/configs/` files, one
-  symbol per file, per §5 — do not copy the config fragment wholesale
+```bash
+# the patch files are concatenated `git format-patch` output, so git am works
+git checkout -b linux-<ver>-surface-arkify <upstream-tag>
+git am /path/to/patches/<ver>/*.patch
+```
+
+For a series still under review, fetch the PR head directly rather than
+cherry-picking from a fork:
+
+```bash
+git fetch https://github.com/linux-surface/linux-surface refs/pull/<N>/head:pr<N>
+for f in $(git ls-tree --name-only pr<N> patches/<ver>/ | sort); do
+    git show pr<N>:$f > /tmp/surface-patches/$(basename $f)
+done
+```
+
+Cross-check the result against the previous series before trusting it:
+
+```bash
+diff <(git log --format='%s' <old-tag>..surface-<old> | sort) \
+     <(git log --format='%s' <new-tag>..HEAD | sort)
+```
+
+Configs: `configs/surface-<ver>.config` is a *fragment* appended to Fedora's
+config by linux-surface's own packaging. Under ark you only need the entries
+that actually differ — for 7.2, 35 of its 42 symbols were already correct,
+because Fedora carries the Surface Aggregator stack and IPU3 cameras upstream.
+Audit each per §5 rather than copying the fragment wholesale, and pay attention
+to entries that exist only for another arch (`APDS9960` had an aarch64 override
+but no x86 one) and to stale CVE workarounds carried forward between releases.
 
 The surface tree is x86_64, so a local `make dist-srpm` **and** a local mock
 build are both feasible on an x86_64 workstation, unlike sc7280.
