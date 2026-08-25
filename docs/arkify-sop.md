@@ -429,6 +429,38 @@ That line is the whole release action — for you and for the automation alike.
 No COPR tokens live anywhere; the webhook (COPR project → Settings →
 Integrations, added to the kernel repo's GitHub webhooks) carries the trust.
 
+### Wiring (or re-wiring) the webhooks
+
+The Integrations page is the manual route; the scriptable one (done
+2026-08-25 for both kernel targets, and for pocketblue-packages feeding
+`@mobility/{common,surface,sc7280}`):
+
+```bash
+# 1. The webhook URL is /webhooks/github/<project-id>/<secret>/. The API
+#    exposes the secret only through generate — which also ROTATES it, so
+#    re-running invalidates any hook installed with the old URL.
+python3 - <<'EOF'
+from copr.v3 import Client
+c = Client.create_from_config_file()          # auth from ~/.config/copr
+w = dict(c.webhook_proxy.generate("@mobility", "surface"))
+print(f"https://copr.fedorainfracloud.org/webhooks/github/{w['id']}/{w['webhook_secret']}/")
+EOF
+
+# 2. Install it as a push webhook on the source repo:
+gh api repos/LorbusChris/linux/hooks -f name=web -F active=true \
+  -f 'events[]=push' -f 'config[url]=<URL>' -f 'config[content_type]=json'
+
+# 3. Rebuild-on-push is gated per package by its flag:
+copr-cli edit-package-scm @mobility/surface --name kernel \
+  --clone-url https://github.com/LorbusChris/linux --commit copr-surface \
+  --method make_srpm --webhook-rebuild on
+```
+
+GitHub's creation ping should then show `last_response: 200` in
+`gh api repos/<repo>/hooks`. For monorepos (pocketblue-packages), COPR
+rebuilds only the packages whose subdirectory the pushed commits touched —
+one webhook serves the whole repo.
+
 ### Rebase side — what the workflow does
 
 Daily, per target (`targets/<target>.env` in the automation repo):
