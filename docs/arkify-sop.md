@@ -435,7 +435,13 @@ Daily, per target (`targets/<target>.env` in the automation repo):
 
 1. Detect: highest existing `linux-X.Y.Z-<target>-arkify` branch vs
    [kernel.org/releases.json](https://www.kernel.org/releases.json) for the
-   target's `SERIES`. Stateless — git is the state.
+   target's `SERIES`. Stateless — git is the state. A stable point release is
+   queued only once knurd42's `arkify-infra-stable-X.Y` branch exists — until
+   then a "waiting for ark infra" issue holds it, so builds never rush ahead
+   of the Fedora ark infrastructure. (Deliberately not gated on the series
+   Fedora itself ships: one branch feeds chroots spanning several series, and
+   a newer stable kernel on older Fedora userspace is the normal
+   kernel-vanilla case.)
 2. On a new point release: §2 rebase (conflict ⇒ GitHub issue, touch nothing),
    §3 seeded-infra arkify run, §8 checklist mechanically, `make dist-srpm`
    smoke test, then push pinned + infra branches and fast-forward the
