@@ -303,11 +303,12 @@ mock -r fedora-<rel>-aarch64 redhat/rpm/SRPMS/kernel-*.src.rpm
 x86_64 workstation without an aarch64 cross-toolchain, the first actual compile
 happens in mock/COPR on an aarch64 builder. Budget for that.
 
-Push and point COPR at the single branch:
+Push, then release by fast-forwarding the consumption branch (§9):
 
 ```bash
 git push fork <new-target>
 git push fork arkify-local-infra-<new-target>   # backup only, NOT a build input
+git push fork <new-target>:copr-<target-name>   # THE release gesture: triggers COPR
 ```
 
 Keep the previous target branch on the fork until the first COPR build is green,
@@ -396,3 +397,61 @@ ls redhat/rpm/SRPMS/                                           # expected NVR
 git clone --single-branch --branch <target> file://$PWD /tmp/onebranch
 cd /tmp/onebranch && git fetch --tags origin && make NO_CONFIGCHECKS=1 dist-srpm
 ```
+
+---
+
+## 9. Automation
+
+[LorbusChris/arkify-automation](https://github.com/LorbusChris/arkify-automation)
+runs §2–§3 of this document on a daily cron (GitHub Actions, Fedora container).
+It exists so a kernel point release normally needs **no human at all**; read
+this section to know where the machine stops and you start.
+
+### Build side — consumption branches + webhooks, no credentials
+
+Each COPR package's committish is a stable *consumption branch*, and a GitHub
+webhook on the kernel repo notifies COPR on push:
+
+| target | COPR package | consumption branch |
+|---|---|---|
+| sc7280 | `@mobility/sc7280` / `kernel` | `copr-sc7280` |
+| surface | `@mobility/surface` / `kernel` | `copr-surface` |
+
+COPR only rebuilds when the pushed ref **ends with** the committish
+(frontend `packages_logic.py`: `ref.endswith(committish)`), which is exactly why
+version-pinned branches never trigger builds and the consumption push does:
+
+```bash
+git push fork linux-X.Y.Z-<target>-arkify:copr-<target>   # the release gesture
+```
+
+That line is the whole release action — for you and for the automation alike.
+No COPR tokens live anywhere; the webhook (COPR project → Settings →
+Integrations, added to the kernel repo's GitHub webhooks) carries the trust.
+
+### Rebase side — what the workflow does
+
+Daily, per target (`targets/<target>.env` in the automation repo):
+
+1. Detect: highest existing `linux-X.Y.Z-<target>-arkify` branch vs
+   [kernel.org/releases.json](https://www.kernel.org/releases.json) for the
+   target's `SERIES`. Stateless — git is the state.
+2. On a new point release: §2 rebase (conflict ⇒ GitHub issue, touch nothing),
+   §3 seeded-infra arkify run, §8 checklist mechanically, `make dist-srpm`
+   smoke test, then push pinned + infra branches and fast-forward the
+   consumption branch.
+
+### What stays manual
+
+- **Rebase conflicts** — the workflow opens an issue naming the files; run §2
+  yourself.
+- **New series** (X.Y → X.Y+1) — notify-only issue; do §2–§7 by hand, then bump
+  `SERIES` in `targets/<target>.env`.
+- **Upstream patch-source movement** (sc7280-mainline pushed new patches,
+  linux-surface changed a series) — resyncing the patch stack needs judgment.
+
+### Rehearsing changes to the automation
+
+`workflow_dispatch` with `dry_run: true` pushes `rehearsal/*` refs and never
+touches a consumption branch; compare the rehearsal tree hash against a manual
+run before trusting script changes.
