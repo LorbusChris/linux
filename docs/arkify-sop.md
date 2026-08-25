@@ -450,6 +450,16 @@ Daily, per target (`targets/<target>.env` in the automation repo):
 - **Upstream patch-source movement** (sc7280-mainline pushed new patches,
   linux-surface changed a series) — resyncing the patch stack needs judgment.
 
+### Where results are reported
+
+Everything reports through issues in the automation repo. A persistent
+**“COPR build dashboard”** issue is kept open and edited in place every 6 hours
+with per-target/per-chroot build status; a comment (→ one notification) is
+added only on state transitions, and every *failed* COPR build additionally
+gets its own deduplicated issue with log links. Rebase conflicts, new upstream
+series, and a dead deploy key each open their own issue too — a quiet issue
+tracker means everything is green.
+
 ### Rehearsing changes to the automation
 
 `workflow_dispatch` with `dry_run: true` pushes `rehearsal/*` refs and never
