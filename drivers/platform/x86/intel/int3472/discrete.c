@@ -157,6 +157,47 @@ static const struct int3472_gpio_map int3472_gpio_map[] = {
 		.type_to = INT3472_GPIO_TYPE_RESET,
 		.con_id = "enable",
 	},
+	{	/*
+		 * Surface Pro 7+ (and other IPU6 designs) wire the OV7251's
+		 * single gated rail to the INT3472 power-enable GPIO, but the
+		 * ov7251 driver / DT-bindings name their supplies vdda, vddd
+		 * and vdddo. Without this the regulator is registered as
+		 * "avdd", the driver finds no supply at all, and the sensor is
+		 * never powered: probe dies on the first I2C write with -121.
+		 */
+		.hid = "INT347E",
+		.type_from = INT3472_GPIO_TYPE_POWER_ENABLE,
+		.type_to = INT3472_GPIO_TYPE_POWER_ENABLE,
+		.con_id = "vdda",
+		.enable_time_us = GPIO_REGULATOR_ENABLE_TIME,
+	},
+	{	/*
+		 * The Surface Pro 8's infrared sensor (ST VD55G0, SMO55F0)
+		 * requests its supplies as vcore, vddio and vana, so the
+		 * generic "dovdd"/"avdd"/"dvdd" rails are never claimed and
+		 * probe dies with -121. Supplies verified by regulator
+		 * consumer binding on Surface Pro 8, see PR #2252.
+		 */
+		.hid = "SMO55F0",
+		.type_from = 0x10,
+		.type_to = 0x10,
+		.con_id = "vddio",
+		.enable_time_us = GPIO_REGULATOR_ENABLE_TIME,
+	},
+	{
+		.hid = "SMO55F0",
+		.type_from = INT3472_GPIO_TYPE_POWER_ENABLE,
+		.type_to = INT3472_GPIO_TYPE_POWER_ENABLE,
+		.con_id = "vana",
+		.enable_time_us = GPIO_REGULATOR_ENABLE_TIME,
+	},
+	{
+		.hid = "SMO55F0",
+		.type_from = INT3472_GPIO_TYPE_HANDSHAKE,
+		.type_to = INT3472_GPIO_TYPE_HANDSHAKE,
+		.con_id = "vcore",
+		.enable_time_us = GPIO_REGULATOR_ENABLE_TIME,
+	},
 	{	/* ov08x40's handshake pin needs a 45 ms delay on some HP laptops */
 		.hid = "OVTI08F4",
 		.type_from = INT3472_GPIO_TYPE_HANDSHAKE,
@@ -166,12 +207,33 @@ static const struct int3472_gpio_map int3472_gpio_map[] = {
 	},
 };
 
+/*
+ * Surface Pro 7+ declares a second power-enable GPIO for the OV8865 with the
+ * vendor-specific type 0x08, which no upstream code handles. The sensor needs
+ * it: with only the type 0x0B rail ("avdd") powered the first I2C write dies
+ * with -121. Which of the ov8865 driver's supplies it actually feeds is a
+ * guess, so keep it settable. The default "dvdd" is what the in-tree ov8865
+ * driver requests; GPIO_SUPPLY_NAME_LENGTH is 6 here, so "dovdd" fits too.
+ */
+static char *ov8865_pwr1_con_id = "dvdd";
+module_param(ov8865_pwr1_con_id, charp, 0644);
+MODULE_PARM_DESC(ov8865_pwr1_con_id,
+		 "supply name for the OV8865's type 0x08 power-enable GPIO");
+
 static void int3472_get_con_id_and_polarity(struct int3472_discrete_device *int3472, u8 *type,
 					    const char **con_id, unsigned long *gpio_flags,
 					    unsigned int *enable_time_us)
 {
 	struct acpi_device *adev = int3472->sensor;
 	unsigned int i;
+
+	if (*type == 0x08 && acpi_dev_hid_uid_match(adev, "INT347A", NULL)) {
+		*type = INT3472_GPIO_TYPE_POWER_ENABLE;
+		*con_id = ov8865_pwr1_con_id;
+		*gpio_flags = GPIO_ACTIVE_HIGH;
+		*enable_time_us = GPIO_REGULATOR_ENABLE_TIME;
+		return;
+	}
 
 	for (i = 0; i < ARRAY_SIZE(int3472_gpio_map); i++) {
 		/*
