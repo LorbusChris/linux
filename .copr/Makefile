@@ -1,0 +1,10 @@
+srpm:
+	dnf -y install git make gcc flex bison bzip2 dwarves xz rpm-build python3-pyyaml rust rust-src bindgen rustfmt
+	git config user.email "copr@build"
+	git config user.name "COPR Build"
+	.copr/deepen_gittree.sh
+
+	# set UPSTREAMBUILD_GIT_ONLY=0 to include date in %release when building snapshots
+	make NO_CONFIGCHECKS=1 DIST=.fc$(shell rpm -E %fedora) UPSTREAMBUILD_GIT_ONLY=0 dist-srpm
+
+	mv redhat/rpm/SRPMS/*.src.rpm  $(outdir)
